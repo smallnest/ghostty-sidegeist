@@ -138,6 +138,24 @@ struct SidebarView: View {
 
                             Divider()
 
+                            Button("Move to New Window") {
+                                tabManager.moveTabToNewWindow(tab)
+                            }
+                            .disabled(tabManager.tabs.count <= 1)
+
+                            let windowTargets = tabManager.otherWindowTargets(for: tab)
+                            if !windowTargets.isEmpty {
+                                Menu("Move to Window") {
+                                    ForEach(windowTargets) { target in
+                                        Button(target.title) {
+                                            tabManager.moveTab(tab, to: target)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Divider()
+
                             Button("Close Tab") {
                                 tabManager.closeTab(tab)
                             }

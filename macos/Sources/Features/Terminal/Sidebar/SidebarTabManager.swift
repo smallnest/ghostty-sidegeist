@@ -257,6 +257,76 @@ class SidebarTabManager: ObservableObject {
         }
     }
 
+    // MARK: - Moving Between Windows
+
+    /// A tab group (top-level window) that a tab can be moved into.
+    struct WindowTarget: Identifiable {
+        let id: ObjectIdentifier
+        let title: String
+        let window: NSWindow
+    }
+
+    /// Every other terminal window (tab group) the given tab could move
+    /// to, one entry per group, in the order macOS lists the windows.
+    func otherWindowTargets(for tab: TabItem) -> [WindowTarget] {
+        let ownGroup = tab.window.tabGroup
+        var seen: Set<ObjectIdentifier> = []
+        var targets: [WindowTarget] = []
+
+        for controller in TerminalController.all {
+            guard let w = controller.window, w !== tab.window else { continue }
+            if let ownGroup, let group = w.tabGroup, group === ownGroup { continue }
+
+            // Collapse each tab group to a single entry, keyed by the group
+            // (or the window itself when it isn't in a group).
+            let key = w.tabGroup.map { ObjectIdentifier($0) } ?? ObjectIdentifier(w)
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+
+            let selected = w.tabGroup?.selectedWindow ?? w
+            let count = w.tabGroup?.windows.count ?? 1
+            var title = selected.title.isEmpty ? "Window" : selected.title
+            if title.hasPrefix("\u{1F514} ") { title = String(title.dropFirst(3)) }
+            if count > 1 { title += " (\(count) tabs)" }
+            targets.append(WindowTarget(id: key, title: title, window: selected))
+        }
+        return targets
+    }
+
+    /// Detach the tab into its own top-level window.
+    func moveTabToNewWindow(_ tab: TabItem) {
+        let w = tab.window
+        guard let tabGroup = w.tabGroup, tabGroup.windows.count > 1 else { return }
+        // Detaching a fullscreen tab would drop it into its own fullscreen
+        // space, which nobody wants.
+        guard !w.styleMask.contains(.fullScreen) else { return }
+
+        let frame = w.frame
+        tabGroup.removeWindow(w)
+        // Offset so the new window is visibly separate from the one it left.
+        w.setFrameOrigin(NSPoint(x: frame.origin.x + 40, y: frame.origin.y - 40))
+        w.makeKeyAndOrderFront(nil)
+        refresh()
+    }
+
+    /// Move the tab to the end of another window's tab group and show it.
+    func moveTab(_ tab: TabItem, to target: WindowTarget) {
+        let w = tab.window
+        guard w !== target.window else { return }
+        guard !w.styleMask.contains(.fullScreen),
+              !target.window.styleMask.contains(.fullScreen) else { return }
+
+        let anchor = target.window.tabGroup?.windows.last ?? target.window
+
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        w.tabGroup?.removeWindow(w)
+        anchor.addTabbedWindowSafely(w, ordered: .above)
+        w.makeKeyAndOrderFront(nil)
+        NSAnimationContext.endGrouping()
+        refresh()
+    }
+
     // MARK: - Drag Reordering
 
     /// Move the dragged tab so it sits before the tab currently at

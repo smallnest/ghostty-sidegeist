@@ -18,6 +18,7 @@ Replaces the native tab bar with a left sidebar. The top shows rich tab cards; a
 - **Custom status entries** — show ports, environments, or any metadata via CLI
 - **Attention indicators** — orange dot on tabs with notifications or bell
 - **Drag-and-drop** — reorder tabs by dragging
+- **Move between windows** — right-click a tab to move it to a new window or into any other open window
 - **Theme-aware** — colors derived from your terminal theme
 - **Git panel** — branch, changes, and commit / push / pull for the selected tab's repo ([details](#git-panel))
 
