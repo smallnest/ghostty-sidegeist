@@ -266,29 +266,36 @@ class SidebarTabManager: ObservableObject {
         let window: NSWindow
     }
 
+    /// The tab group `w` belongs to as a move target: keyed by the group
+    /// (or the window itself when it isn't in one), named after its
+    /// selected tab, with a tab count when it has several.
+    private func windowTarget(for w: NSWindow, withCount: Bool) -> WindowTarget {
+        let key = w.tabGroup.map { ObjectIdentifier($0) } ?? ObjectIdentifier(w)
+        let selected = w.tabGroup?.selectedWindow ?? w
+        let count = w.tabGroup?.windows.count ?? 1
+        var title = selected.title.isEmpty ? "Window" : selected.title
+        if title.hasPrefix("\u{1F514} ") { title = String(title.dropFirst(3)) }
+        if withCount, count > 1 { title += " (\(count) tabs)" }
+        return WindowTarget(id: key, title: title, window: selected)
+    }
+
+    /// Whether `w` is `tab`'s own window or shares its tab group.
+    private func isOwnGroup(_ w: NSWindow, for tab: TabItem) -> Bool {
+        if w === tab.window { return true }
+        if let ownGroup = tab.window.tabGroup, let group = w.tabGroup { return group === ownGroup }
+        return false
+    }
+
     /// Every other terminal window (tab group) the given tab could move
     /// to, one entry per group, in the order macOS lists the windows.
     func otherWindowTargets(for tab: TabItem) -> [WindowTarget] {
-        let ownGroup = tab.window.tabGroup
         var seen: Set<ObjectIdentifier> = []
         var targets: [WindowTarget] = []
-
         for controller in TerminalController.all {
-            guard let w = controller.window, w !== tab.window else { continue }
-            if let ownGroup, let group = w.tabGroup, group === ownGroup { continue }
-
-            // Collapse each tab group to a single entry, keyed by the group
-            // (or the window itself when it isn't in a group).
-            let key = w.tabGroup.map { ObjectIdentifier($0) } ?? ObjectIdentifier(w)
-            guard !seen.contains(key) else { continue }
-            seen.insert(key)
-
-            let selected = w.tabGroup?.selectedWindow ?? w
-            let count = w.tabGroup?.windows.count ?? 1
-            var title = selected.title.isEmpty ? "Window" : selected.title
-            if title.hasPrefix("\u{1F514} ") { title = String(title.dropFirst(3)) }
-            if count > 1 { title += " (\(count) tabs)" }
-            targets.append(WindowTarget(id: key, title: title, window: selected))
+            guard let w = controller.window, !isOwnGroup(w, for: tab) else { continue }
+            let target = windowTarget(for: w, withCount: true)
+            guard seen.insert(target.id).inserted else { continue }
+            targets.append(target)
         }
         return targets
     }
@@ -318,16 +325,11 @@ class SidebarTabManager: ObservableObject {
     /// The frontmost terminal window under `screenPoint` that belongs to a
     /// different tab group than `tab`, or nil when there is none.
     func dropTargetWindow(for tab: TabItem, at screenPoint: NSPoint) -> WindowTarget? {
-        let ownGroup = tab.window.tabGroup
         for w in NSApp.orderedWindows {
             guard w is TerminalWindow, w.isVisible, w.frame.contains(screenPoint) else { continue }
-            if w === tab.window { return nil }
-            if let ownGroup, let group = w.tabGroup, group === ownGroup { return nil }
-            let selected = w.tabGroup?.selectedWindow ?? w
-            var title = selected.title.isEmpty ? "Window" : selected.title
-            if title.hasPrefix("\u{1F514} ") { title = String(title.dropFirst(3)) }
-            let key = w.tabGroup.map { ObjectIdentifier($0) } ?? ObjectIdentifier(w)
-            return WindowTarget(id: key, title: title, window: selected)
+            // The topmost hit decides: over its own window there's no target.
+            if isOwnGroup(w, for: tab) { return nil }
+            return windowTarget(for: w, withCount: false)
         }
         return nil
     }
