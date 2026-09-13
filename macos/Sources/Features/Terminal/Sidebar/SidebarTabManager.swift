@@ -293,8 +293,10 @@ class SidebarTabManager: ObservableObject {
         return targets
     }
 
-    /// Detach the tab into its own top-level window.
-    func moveTabToNewWindow(_ tab: TabItem) {
+    /// Detach the tab into its own top-level window. With `screenPoint`
+    /// (e.g. a drop location) the window's top-left lands there; otherwise
+    /// it's offset from the window it left so the two are visibly separate.
+    func moveTabToNewWindow(_ tab: TabItem, at screenPoint: NSPoint? = nil) {
         let w = tab.window
         guard let tabGroup = w.tabGroup, tabGroup.windows.count > 1 else { return }
         // Detaching a fullscreen tab would drop it into its own fullscreen
@@ -303,10 +305,31 @@ class SidebarTabManager: ObservableObject {
 
         let frame = w.frame
         tabGroup.removeWindow(w)
-        // Offset so the new window is visibly separate from the one it left.
-        w.setFrameOrigin(NSPoint(x: frame.origin.x + 40, y: frame.origin.y - 40))
+        if let screenPoint {
+            w.setFrameTopLeftPoint(NSPoint(x: screenPoint.x - 40, y: screenPoint.y + 20))
+            w.constrainToScreen()
+        } else {
+            w.setFrameOrigin(NSPoint(x: frame.origin.x + 40, y: frame.origin.y - 40))
+        }
         w.makeKeyAndOrderFront(nil)
         refresh()
+    }
+
+    /// The frontmost terminal window under `screenPoint` that belongs to a
+    /// different tab group than `tab`, or nil when there is none.
+    func dropTargetWindow(for tab: TabItem, at screenPoint: NSPoint) -> WindowTarget? {
+        let ownGroup = tab.window.tabGroup
+        for w in NSApp.orderedWindows {
+            guard w is TerminalWindow, w.isVisible, w.frame.contains(screenPoint) else { continue }
+            if w === tab.window { return nil }
+            if let ownGroup, let group = w.tabGroup, group === ownGroup { return nil }
+            let selected = w.tabGroup?.selectedWindow ?? w
+            var title = selected.title.isEmpty ? "Window" : selected.title
+            if title.hasPrefix("\u{1F514} ") { title = String(title.dropFirst(3)) }
+            let key = w.tabGroup.map { ObjectIdentifier($0) } ?? ObjectIdentifier(w)
+            return WindowTarget(id: key, title: title, window: selected)
+        }
+        return nil
     }
 
     /// Move the tab to the end of another window's tab group and show it.

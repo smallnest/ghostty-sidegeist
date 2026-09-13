@@ -105,6 +105,7 @@ struct SidebarView: View {
                         }
                         .background(rowFrameReporter(tab.id))
                         .offset(y: offsetY(for: tab.id))
+                        .opacity(isDetached(tab.id) ? 0.35 : 1.0)
                         .scaleEffect(isLifted(tab.id) ? 1.02 : 1.0)
                         .shadow(
                             color: .black.opacity(isLifted(tab.id) ? 0.25 : 0),
@@ -198,7 +199,12 @@ struct SidebarView: View {
     /// together with the card sliding into its slot.
     private func isLifted(_ tabID: ObjectIdentifier) -> Bool {
         guard let drag = dragState else { return false }
-        return drag.id == tabID && !drag.settling
+        return drag.id == tabID && !drag.settling && !drag.detached
+    }
+
+    private func isDetached(_ tabID: ObjectIdentifier) -> Bool {
+        guard let drag = dragState else { return false }
+        return drag.id == tabID && drag.detached
     }
 
     /// The dragged card follows the cursor; every other card shifts by one
@@ -206,6 +212,9 @@ struct SidebarView: View {
     /// position passes it.
     private func offsetY(for tabID: ObjectIdentifier) -> CGFloat {
         guard let drag = dragState else { return 0 }
+        // While detached the card rests dimmed in its home slot; the
+        // floating ghost is what follows the cursor.
+        if drag.detached { return 0 }
         if drag.id == tabID { return drag.offsetY }
         guard let myIndex = drag.order.firstIndex(of: tabID) else { return 0 }
 
@@ -230,7 +239,36 @@ struct SidebarView: View {
                     )
                 }
                 dragState?.offsetY = value.translation.height
-                if let drag = dragState {
+                guard let drag = dragState else { return }
+
+                // Leaving the card horizontally (with a little margin) turns
+                // the reorder into a move-to-window drag; coming back turns
+                // it into a reorder again.
+                let cardWidth = drag.frames[drag.id]?.width ?? 0
+                let detached = value.location.x < -Self.detachMargin
+                    || value.location.x > cardWidth + Self.detachMargin
+                if detached != drag.detached {
+                    withAnimation(.snappy(duration: 0.2)) {
+                        dragState?.detached = detached
+                        if detached { dragState?.targetSlot = drag.sourceIndex }
+                    }
+                    if !detached { SidebarDragGhost.shared.hide() }
+                }
+
+                if detached {
+                    let mouse = NSEvent.mouseLocation
+                    let target = tabManager.dropTargetWindow(for: tab, at: mouse)
+                    dragState?.dropTarget = target
+                    let hint: String
+                    if let target {
+                        hint = "Move to \"\(target.title)\""
+                    } else if tabManager.tabs.count <= 1 {
+                        hint = "Already its own window"
+                    } else {
+                        hint = "Open in new window"
+                    }
+                    SidebarDragGhost.shared.show(title: tab.displayTitle, hint: hint, at: mouse)
+                } else {
                     let slot = targetSlot(for: drag)
                     if slot != drag.targetSlot {
                         withAnimation(.snappy(duration: 0.2)) {
@@ -240,8 +278,30 @@ struct SidebarView: View {
                 }
             }
             .onEnded { _ in
-                settleDrag()
+                if dragState?.detached == true {
+                    dropOutsideSidebar(tab)
+                } else {
+                    settleDrag()
+                }
             }
+    }
+
+    /// Points the cursor may stray past the card's edge before the drag
+    /// becomes a move-to-window drag.
+    private static let detachMargin: CGFloat = 24
+
+    /// Release outside the sidebar: move into the window under the cursor
+    /// or, failing that, pop the tab out into a new window there.
+    private func dropOutsideSidebar(_ tab: SidebarTabManager.TabItem) {
+        SidebarDragGhost.shared.hide()
+        let target = dragState?.dropTarget
+        dragState = nil
+        let mouse = NSEvent.mouseLocation
+        if let target {
+            tabManager.moveTab(tab, to: target)
+        } else {
+            tabManager.moveTabToNewWindow(tab, at: mouse)
+        }
     }
 
     /// The dragged card's final position, from its visual center against
@@ -318,6 +378,11 @@ private struct TabDragState {
     let frames: [ObjectIdentifier: CGRect]
     /// The dragged card's live offset from its base position.
     var offsetY: CGFloat = 0
+    /// True once the cursor has left the sidebar column: the drag is now a
+    /// move-to-window drag rather than a reorder.
+    var detached = false
+    /// The other window under the cursor while detached, if any.
+    var dropTarget: SidebarTabManager.WindowTarget?
     /// The position the dragged card would land at right now (0-based
     /// index in the final order).
     var targetSlot: Int
