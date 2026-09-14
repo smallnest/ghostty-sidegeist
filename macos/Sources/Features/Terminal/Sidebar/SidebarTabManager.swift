@@ -311,7 +311,10 @@ class SidebarTabManager: ObservableObject {
         guard !w.styleMask.contains(.fullScreen) else { return }
 
         let frame = w.frame
+        let remaining = tabGroup.windows.filter { $0 !== w }
         tabGroup.removeWindow(w)
+        // The windows left behind must not move.
+        Self.restoreFrame(frame, for: remaining)
         if let screenPoint {
             w.setFrameTopLeftPoint(NSPoint(x: screenPoint.x - 40, y: screenPoint.y + 20))
             w.constrainToScreen()
@@ -342,11 +345,19 @@ class SidebarTabManager: ObservableObject {
               !target.window.styleMask.contains(.fullScreen) else { return }
 
         let anchor = target.window.tabGroup?.windows.last ?? target.window
+        // Neither window group should move: the source keeps its frame and
+        // the moved tab adopts the target's.
+        let sourceFrame = w.frame
+        let sourceWindows = (w.tabGroup?.windows ?? []).filter { $0 !== w }
+        let targetFrame = anchor.frame
 
         NSAnimationContext.beginGrouping()
         NSAnimationContext.current.duration = 0
         w.tabGroup?.removeWindow(w)
+        Self.restoreFrame(sourceFrame, for: sourceWindows)
+        w.setFrame(targetFrame, display: false)
         anchor.addTabbedWindowSafely(w, ordered: .above)
+        Self.restoreFrame(targetFrame, for: anchor.tabGroup?.windows ?? [anchor, w])
         w.makeKeyAndOrderFront(nil)
         NSAnimationContext.endGrouping()
         refresh()
@@ -397,15 +408,29 @@ class SidebarTabManager: ObservableObject {
             ordered = .below // before the anchor tab
         }
         let selectedWindow = tabGroup.selectedWindow
+        // While detached, AppKit may reposition the window (it's briefly a
+        // standalone window), and the group can then adopt that frame when
+        // it rejoins. Pin the frame across the mutation.
+        let groupFrame = window.frame
 
         // The window must leave the group before re-adding at the anchor;
         // adding a window already in the group appends it at the end.
         NSAnimationContext.beginGrouping()
         NSAnimationContext.current.duration = 0
         tabGroup.removeWindow(movingWindow)
+        movingWindow.setFrame(groupFrame, display: false)
         anchor.addTabbedWindowSafely(movingWindow, ordered: ordered)
+        Self.restoreFrame(groupFrame, for: anchor.tabGroup?.windows ?? [anchor, movingWindow])
         selectedWindow?.makeKeyAndOrderFront(nil)
         NSAnimationContext.endGrouping()
+    }
+
+    /// Put every window of a tab group back at `frame` if the group
+    /// mutation moved any of them.
+    private static func restoreFrame(_ frame: NSRect, for windows: [NSWindow]) {
+        for w in windows where w.frame != frame {
+            w.setFrame(frame, display: false)
+        }
     }
 
     func closeTabsToTheRight(of tab: TabItem) {
