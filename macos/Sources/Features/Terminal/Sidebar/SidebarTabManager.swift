@@ -312,17 +312,38 @@ class SidebarTabManager: ObservableObject {
 
         let frame = w.frame
         let remaining = tabGroup.windows.filter { $0 !== w }
+
+        // Where the new window goes. A drop point inside the window it's
+        // leaving would land it almost exactly on top, so cascade instead.
+        var newFrame = frame
+        if let screenPoint, !frame.contains(screenPoint) {
+            newFrame.origin = NSPoint(
+                x: screenPoint.x - 40,
+                y: screenPoint.y + 20 - frame.height
+            )
+        } else {
+            newFrame.origin = NSPoint(x: frame.origin.x + 40, y: frame.origin.y - 40)
+        }
+        if let screen = w.screen ?? NSScreen.main {
+            let vf = screen.visibleFrame
+            newFrame.origin.x = max(vf.minX, min(newFrame.origin.x, vf.maxX - newFrame.width))
+            newFrame.origin.y = max(vf.minY, min(newFrame.origin.y, vf.maxY - newFrame.height))
+        }
+
         tabGroup.removeWindow(w)
         // The windows left behind must not move.
         Self.restoreFrame(frame, for: remaining)
-        if let screenPoint {
-            w.setFrameTopLeftPoint(NSPoint(x: screenPoint.x - 40, y: screenPoint.y + 20))
-            w.constrainToScreen()
-        } else {
-            w.setFrameOrigin(NSPoint(x: frame.origin.x + 40, y: frame.origin.y - 40))
-        }
+        w.setFrame(newFrame, display: true)
         w.makeKeyAndOrderFront(nil)
         refresh()
+
+        // AppKit finishes tearing down the tab membership a turn later and
+        // can re-apply the old group frame to the detached window. Put it
+        // back where the user dropped it.
+        DispatchQueue.main.async { [weak w] in
+            guard let w, w.frame != newFrame else { return }
+            w.setFrame(newFrame, display: true)
+        }
     }
 
     /// The frontmost terminal window under `screenPoint` that belongs to a
