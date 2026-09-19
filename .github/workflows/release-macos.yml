@@ -1,0 +1,98 @@
+# Self-contained macOS release.
+#
+# Pushing a `vX.Y.Z` tag builds the Ghostty.app (ad-hoc signed) on a
+# GitHub-hosted macOS runner and publishes a GitHub Release with the
+# zipped app and a DMG. No Apple Developer certificates or custom
+# runners are required; the app is ad-hoc signed and is not notarized,
+# so it is meant for personal / internal distribution.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+name: Release macOS
+
+# Only run one release at a time so concurrent tags can't clobber each
+# other's artifacts.
+concurrency:
+  group: release-macos
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write # to create the GitHub Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Needed for build-number generation and release notes.
+          fetch-depth: 0
+
+      - name: Extract Version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Zig
+        run: |
+          ARCH="$(uname -m)"
+          if [ "$ARCH" = "arm64" ]; then
+            ZIG_TARBALL="zig-aarch64-macos-0.15.2.tar.xz"
+          else
+            ZIG_TARBALL="zig-x86_64-macos-0.15.2.tar.xz"
+          fi
+          curl -fsSL "https://ziglang.org/download/0.15.2/${ZIG_TARBALL}" -o zig.tar.xz
+          tar -xf zig.tar.xz
+          echo "$(pwd)/${ZIG_TARBALL%.tar.xz}" >> "$GITHUB_PATH"
+
+      - name: Build GhosttyKit
+        run: |
+          zig version
+          zig build \
+            -Doptimize=ReleaseFast \
+            -Demit-macos-app=false \
+            -Dversion-string=${{ steps.version.outputs.version }}
+
+      - name: Build Ghostty.app
+        run: |
+          cd macos
+          xcodebuild \
+            -project Ghostty.xcodeproj \
+            -target Ghostty \
+            -configuration Release \
+            SYMROOT=build
+
+      - name: Package App
+        run: |
+          set -euo pipefail
+          APP="$(find macos/build -name 'Ghostty.app' -type d | head -1)"
+          test -n "$APP"
+          echo "Packing: $APP"
+          # The project is configured for ad-hoc signing; verify it came
+          # out signed (informational only).
+          codesign --verify --deep --strict "$APP" || \
+            echo "warning: Ghostty.app is not signed; it may not launch on Apple Silicon"
+
+          VERSION="${{ steps.version.outputs.version }}"
+          ditto -c -k --keepParent "$APP" "Ghostty-${VERSION}-macos-universal.zip"
+          hdiutil create \
+            -volname "Ghostty" \
+            -srcfolder "$APP" \
+            -ov \
+            -format UDZO \
+            "Ghostty-${VERSION}-macos-universal.dmg"
+          ls -lh "Ghostty-${VERSION}-macos-universal."*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Ghostty ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            Ghostty-*.zip
+            Ghostty-*.dmg
