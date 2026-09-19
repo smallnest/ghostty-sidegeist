@@ -7027,6 +7027,11 @@ pub const Keybinds = struct {
             );
             try self.set.put(
                 alloc,
+                .{ .key = .{ .unicode = 'b' }, .mods = .{ .super = true } },
+                .{ .toggle_sidebar = {} },
+            );
+            try self.set.put(
+                alloc,
                 .{ .key = .{ .unicode = '[' }, .mods = .{ .super = true, .shift = true } },
                 .{ .previous_tab = {} },
             );
@@ -7541,6 +7546,19 @@ pub const Keybinds = struct {
             \\
         ;
         try std.testing.expectEqualStrings(want, buf.written());
+    }
+
+    test "keybind toggle_sidebar parses" {
+        const testing = std.testing;
+        var arena = ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        var list: Keybinds = .{};
+        try list.parseCLI(alloc, "super+b=toggle_sidebar");
+
+        // The keybind exists and maps to toggle_sidebar.
+        try testing.expect(list.set.getTrigger(.{ .toggle_sidebar = {} }) != null);
     }
 
     test "parseCLI table definition" {

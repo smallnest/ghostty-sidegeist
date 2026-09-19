@@ -599,6 +599,9 @@ extension Ghostty {
             case GHOSTTY_ACTION_TOGGLE_BACKGROUND_OPACITY:
                 toggleBackgroundOpacity(app, target: target)
 
+            case GHOSTTY_ACTION_TOGGLE_SIDEBAR:
+                toggleSidebar(app, target: target)
+
             case GHOSTTY_ACTION_KEY_SEQUENCE:
                 keySequence(app, target: target, v: action.action.key_sequence)
 
@@ -1574,6 +1577,27 @@ extension Ghostty {
                     let controller = surfaceView.window?.windowController as? BaseTerminalController else { return }
 
                 controller.toggleBackgroundOpacity()
+
+            default:
+                assertionFailure()
+            }
+        }
+
+        private static func toggleSidebar(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s
+        ) {
+            switch target.tag {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("toggle sidebar does nothing with an app target")
+                return
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface,
+                    let surfaceView = self.surfaceView(from: surface),
+                    let controller = surfaceView.window?.windowController as? BaseTerminalController else { return }
+
+                controller.toggleSidebar()
 
             default:
                 assertionFailure()

@@ -21,6 +21,7 @@ Replaces the native tab bar with a left sidebar. The top shows rich tab cards; a
 - **Move between windows** — drag a tab card out of the sidebar and drop it on another window (or anywhere else for a new window); the same actions are in the tab's context menu
 - **Theme-aware** — colors derived from your terminal theme
 - **Git panel** — branch, changes, and commit / push / pull for the selected tab's repo ([details](#git-panel))
+- **Toggle with ⌘B** — show/hide the sidebar; rebind via `keybind = super+b=toggle_sidebar` (set it to nothing to disable)
 
 ### Config
 

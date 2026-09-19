@@ -73,6 +73,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     /// The sidebar hosting view, kept for theme updates on config change.
     private var sidebarHostingView: NSHostingView<SidebarView>?
 
+    /// The split view hosting the sidebar and the terminal, used to toggle
+    /// the sidebar's visibility.
+    private var sidebarSplitView: NSSplitView?
+
 
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
@@ -1168,6 +1172,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         splitView.setHoldingPriority(.defaultLow, forSubviewAt: 0)
         splitView.setHoldingPriority(.defaultHigh, forSubviewAt: 1)
         splitView.delegate = self
+        self.sidebarSplitView = splitView
 
         // Set initial sidebar width (synced across tabs via UserDefaults)
         let savedWidth = UserDefaults.standard.double(forKey: "SidebarWidth")
@@ -1273,6 +1278,32 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         let width = sidebar.frame.width
         if width > 0 {
             UserDefaults.standard.set(width, forKey: "SidebarWidth")
+        }
+    }
+
+    // MARK: Sidebar
+
+    /// Toggle the visibility of the sidebar.
+    ///
+    /// We collapse/expand by hiding the sidebar subview of the split view
+    /// (rather than setting its divider position to 0, which the
+    /// `constrainMinCoordinate` delegate would clamp to 140).
+    override func toggleSidebar() {
+        guard let splitView = sidebarSplitView,
+              splitView.subviews.count >= 2,
+              let sidebar = splitView.subviews.first else { return }
+
+        if splitView.isSubviewCollapsed(sidebar) {
+            // Expand: restore the last known width (already persisted by
+            // `splitViewDidResizeSubviews` when the divider was dragged).
+            sidebar.isHidden = false
+            let savedWidth = UserDefaults.standard.double(forKey: "SidebarWidth")
+            let width = savedWidth > 0 ? min(max(savedWidth, 140), 280) : 200
+            splitView.setPosition(width, ofDividerAt: 0)
+            splitView.adjustSubviews()
+        } else {
+            sidebar.isHidden = true
+            splitView.adjustSubviews()
         }
     }
 

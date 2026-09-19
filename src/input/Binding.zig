@@ -594,6 +594,11 @@ pub const Action = union(enum) {
     /// found by running `ghostty +version`.
     toggle_tab_overview,
 
+    /// Toggle the sidebar.
+    ///
+    /// This is only supported on macOS.
+    toggle_sidebar,
+
     /// Change the title of the current focused surface via a pop-up prompt.
     prompt_surface_title,
 
@@ -1419,6 +1424,7 @@ pub const Action = union(enum) {
             .goto_tab,
             .move_tab,
             .toggle_tab_overview,
+            .toggle_sidebar,
             .new_split,
             .goto_split,
             .goto_window,

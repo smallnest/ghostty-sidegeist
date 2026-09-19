@@ -1023,6 +1023,12 @@ class BaseTerminalController: NSWindowController,
         }
     }
 
+    /// Toggle the visibility of the sidebar. Only relevant for windows that
+    /// host a sidebar; subclasses should override this.
+    func toggleSidebar() {
+        // No-op by default.
+    }
+
     /// Override this to resync any appearance related properties. This will be called automatically
     /// when certain window properties change that affect appearance. The list below should be updated
     /// as we add new things:
